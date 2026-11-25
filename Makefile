@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 SWIFTC := xcrun swiftc
 CACHE := build/module-cache
-SWIFT_SRC := tools/PetReactions.swift tools/GlassDesk.swift tools/PeerPetsActivity.swift tools/PeerPets.swift
+SWIFT_SRC := tools/WhaleSeat.swift tools/PetReactions.swift tools/GlassDesk.swift tools/PeerPetsActivity.swift tools/PeerPets.swift
 APP := build/PeerPets.app
 MACOS := $(APP)/Contents/MacOS
 RESOURCES := LICENSE macos/Resources/ART-CREDITS.txt macos/Resources/CrossPet-LICENSE.md \
@@ -9,7 +9,7 @@ RESOURCES := LICENSE macos/Resources/ART-CREDITS.txt macos/Resources/CrossPet-LI
              macos/Resources/gemini-sleep.webp macos/Resources/gemini-stir.webp macos/Resources/gemini-tail.webp \
              macos/Resources/gemini-thinking.webp macos/Resources/gpt-idle-blink.webp macos/Resources/gpt-idle.webp \
              macos/Resources/gpt-listening.webp macos/Resources/gpt-sleep.webp macos/Resources/gpt-stir.webp \
-             macos/Resources/gpt-thinking.webp
+             macos/Resources/gpt-thinking.webp macos/Resources/whale-snack.webp macos/Resources/whale-step.webp macos/Resources/whale-work.webp
 
 .PHONY: app test
 app: $(APP)/Contents/_CodeSignature/CodeResources

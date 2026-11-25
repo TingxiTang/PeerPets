@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""派给使用 DeepSeek 的本机 Claude Code。仅向桌宠写入请求状态。"""
+import argparse
+from contextlib import ExitStack
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from urllib.parse import urlsplit
+import uuid
+
+sys.dont_write_bytecode = True
+from peer import pet_status, run_attempt
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--from", dest="sender", required=True, choices=("codex", "antigravity"))
+    parser.add_argument("--cwd", type=Path, help="单文件任务的独立目录")
+    parser.add_argument("--output", help="只允许写入这个新文件，目录中预置 ./verify")
+    parser.add_argument("--timeout", type=int, default=300, help="总时限（秒）")
+    parser.add_argument("question", nargs="?", help="省略时从标准输入读取任务")
+    args = parser.parse_args()
+    message = (args.question if args.question is not None else sys.stdin.read()).strip()
+    if not message or args.timeout <= 0:
+        parser.error("请输入任务及正的总时限")
+    if bool(args.cwd) != bool(args.output):
+        parser.error("--cwd 和 --output 需成对使用")
+    if args.output:
+        if (not re.fullmatch(r"[A-Za-z0-9_-][\w.-]{0,79}", args.output) or args.output == "verify"
+                or not args.cwd.is_dir() or os.path.lexists(args.cwd / args.output)
+                or not (args.cwd / "verify").is_file() or not os.access(args.cwd / "verify", os.X_OK)):
+            parser.error("需要独立目录、单个尚不存在的输出文件名和可执行的 ./verify")
+    if os.environ.get("WORKSPACE_PEER_ACTIVE"):
+        parser.error("请将回复返回发起方，由发起方继续派工")
+    route = urlsplit(os.getenv("ANTHROPIC_BASE_URL", ""))
+    if route.scheme != "https" or route.hostname != "api.deepseek.com":
+        parser.error("当前进程未配置 DeepSeek 官方 HTTPS 端点，未派工")
+    binary = shutil.which("claude")
+    if not binary:
+        parser.error("找不到 claude CLI")
+
+    request = uuid.uuid4().hex + ".json"
+    start = time.monotonic()
+    def publish(phase, reason=None, lifetime=None):
+        pet_status(request, "cc", phase, reason, time.monotonic()-start, 1,
+                   sender=args.sender, provider="deepseek", lifetime=lifetime)
+
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+    model = "deepseek-flash"
+    with tempfile.TemporaryDirectory(prefix="peer-cc-") as directory, ExitStack() as lifetime:
+        cwd = args.cwd.resolve() if args.cwd else Path(directory)
+        env = dict(os.environ, WORKSPACE_PEER_ACTIVE="1", CLAUDE_CONFIG_DIR=str(Path(directory)/"config"))
+        cmd = [binary, "-p", "--model", model, "--effort", "low", "--setting-sources", "",
+               "--no-session-persistence", "--strict-mcp-config", "--output-format", "json"]
+        if args.output:
+            cmd += ["--disable-slash-commands", "--tools", "Write,Bash", "--allowedTools",
+                    f"Edit(/{args.output})", "Bash(./verify)", "--permission-mode", "dontAsk"]
+            message += f"\n在当前目录只创建 {args.output}，完成后运行 ./verify 并报告实际结果。"
+        else:
+            cmd += ["--bare", "--tools", ""]
+        try:
+            code, raw, _ = run_attempt(cmd, cwd, env, message, args.timeout,
+                                       on_start=lambda: publish("busy", lifetime=lifetime))
+            if code:
+                publish("failed", "cancelled" if code in (130, -signal.SIGINT, -signal.SIGTERM) else "cli")
+                return 130 if code in (130, -signal.SIGINT, -signal.SIGTERM) else 1
+            result = json.loads(raw)
+            if (not isinstance(result, dict) or result.get("is_error") is not False
+                    or not isinstance(result.get("modelUsage"), dict) or model not in result["modelUsage"]):
+                raise ValueError("CC 未确认成功回执与本次 DeepSeek 模型")
+            reply = result.get("result")
+            if not isinstance(reply, str) or not reply.strip():
+                raise ValueError("CC 没有返回正文")
+            print(reply.strip(), flush=True)
+            if args.output:
+                output = cwd / args.output
+                if output.is_symlink() or not output.is_file():
+                    publish("failed", "missing_output")
+                    print("已收到 CC 回执，缺少约定的普通文件", file=sys.stderr)
+                    return 1
+                remaining = args.timeout - (time.monotonic() - start)
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired("./verify", args.timeout)
+                check, report, _ = run_attempt(["./verify"], cwd, env, "", remaining)
+                if report:
+                    print(report, file=sys.stderr)
+                if check:
+                    publish("failed", "verification")
+                    print(f"文件已写出，本地 ./verify 退出码 {check}", file=sys.stderr)
+                    return 1
+                print("文件已写出，桥接复验 ./verify 退出码 0", file=sys.stderr)
+        except KeyboardInterrupt:
+            publish("failed", "cancelled")
+            return 130
+        except subprocess.TimeoutExpired:
+            publish("failed", "timeout")
+            print("CC 调用达到总时限", file=sys.stderr)
+            return 124
+        except (OSError, ValueError) as error:
+            publish("failed", "cli")
+            print(f"CC 调用失败：{error}", file=sys.stderr)
+            return 1
+        publish("done", "verified" if args.output else None)
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

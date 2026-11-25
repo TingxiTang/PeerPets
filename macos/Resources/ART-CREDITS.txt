@@ -8,3 +8,5 @@ https://creativecommons.org/licenses/by-nc-sa/4.0/
 https://genderswapai.com/zh-TW/ai-gijinka/gemini
 
 同桌 1.8 的睡姿以相同角色待机图为参照，由 agy 设计、图像生成工具重绘并从透明合图分离。stir 与 tail 是局部动作变体。gpt-listening、gpt-idle-blink、gemini-listening、gemini-pat 来自上述 CrossPet 提交。上述原图、改编立绘与含角色的预览按 CC BY-NC-SA 4.0 共享。
+
+1.9 客座鲸鱼娘：鲸鱼娘原型上善无形，鲸鱼女仆改编与 Claude 娘参考 ZipZipPipe，立绘参考同上 CrossPet 提交中的 DeepSeek 与 Claude。以蓝发鲸尾、橙花客座制服改编稿为参照，用内置图像生成工具绘制后排吃鱼与前排抱板两姿。whale-step 沿用客座制服改编稿。三姿及含角色的预览按 CC BY-NC-SA 4.0 共享。

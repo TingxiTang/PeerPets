@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import ExitStack
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -24,7 +25,32 @@ CODEX_CHECK_TIMEOUT = 90
 EXECUTION_TIMEOUT = 1800
 
 
-def pet_status(event_id, peer, phase, reason=None, elapsed=None, attempts=0, diagnostic=None):
+def prune_old_events(directory, cutoff):
+    for old in directory.glob("*.json"):
+        try:
+            with old.open() as stream:
+                if os.fstat(stream.fileno()).st_mtime >= cutoff:
+                    continue
+                # Active CC records hold this inode locked until a terminal replacement or exit.
+                fcntl.flock(stream, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                event = json.load(stream)
+                if not isinstance(event, dict):
+                    continue
+                if event.get("phase") in ("starting", "busy", "retrying") and not event.get("ownerLocked"):
+                    pid = event.get("pid")
+                    if isinstance(pid, int) and 0 < pid <= 2147483647:
+                        try:
+                            os.kill(pid, 0)
+                            continue
+                        except ProcessLookupError:
+                            pass
+                if os.path.samestat(os.fstat(stream.fileno()), old.stat()):
+                    old.unlink()
+        except (OSError, ValueError):
+            continue
+
+
+def pet_status(event_id, peer, phase, reason=None, elapsed=None, attempts=0, diagnostic=None, *, sender=None, provider=None, lifetime=None):
     """桌宠可随时关闭。仅分享本机的调用状态，所有记录均可丢弃。"""
     directory = Path("/tmp") / f"codex-agy-pet-{os.getuid()}"
     path = directory / event_id
@@ -34,19 +60,25 @@ def pet_status(event_id, peer, phase, reason=None, elapsed=None, attempts=0, dia
         stat = directory.lstat()
         if directory.is_symlink() or stat.st_uid != os.getuid() or stat.st_mode & 0o077:
             return
-        if phase == "starting":
-            cutoff = time.time() - 86400
-            for old in directory.glob("*.json"):
-                if old.stat().st_mtime < cutoff:
-                    old.unlink(missing_ok=True)
+        if phase == "starting" or lifetime is not None:
+            prune_old_events(directory, time.time() - 86400)
         record = dict(peer=peer, phase=phase, time=time.time(), pid=os.getpid())
+        if sender is not None:
+            record.update(sender=sender, provider=provider)
         if elapsed is not None:
             record.update(elapsed_seconds=round(elapsed, 3), attempts=attempts)
         if reason:
             record["reason"] = reason
         if diagnostic:
             record["diagnostic"] = diagnostic
-        temporary.write_text(json.dumps(record), encoding="utf-8")
+        if lifetime is None:
+            temporary.write_text(json.dumps(record), encoding="utf-8")
+        else:
+            stream = lifetime.enter_context(temporary.open("w", encoding="utf-8"))
+            fcntl.flock(stream, fcntl.LOCK_EX)
+            record["ownerLocked"] = True
+            json.dump(record, stream)
+            stream.flush()
         temporary.replace(path)
     except OSError:
         pass
@@ -162,7 +194,7 @@ class NoACPProgress(subprocess.TimeoutExpired):
     """The turn has produced no qualifying update within the idle window."""
 
 
-def run_attempt(command, directory, env, message, timeout, activity_file=None):
+def run_attempt(command, directory, env, message, timeout, activity_file=None, on_start=None):
     hard_deadline = time.monotonic() + timeout
     process = subprocess.Popen(command, cwd=directory, env=env, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
@@ -181,6 +213,8 @@ def run_attempt(command, directory, env, message, timeout, activity_file=None):
     reader = threading.Thread(target=forward_errors, args=(error_stream,), daemon=True)
     reader.start()
     try:
+        if on_start is not None:
+            on_start()
         pending_input = message.encode("utf-8")
         wait = min(timeout, AGY_TIMEOUT) if activity_file else timeout
         announced = False

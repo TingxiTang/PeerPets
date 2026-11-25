@@ -86,6 +86,8 @@ if sys.argv[1] == 'acp' and (mode.startswith('activity_') or mode in ('echo_chec
                 reply = 'ok'
             else:
                 reply = 'PONG'
+            tool_status = {'sessionUpdate':'tool_call_update', 'content':[]}
+            print(json.dumps({'method':'session/update','params':{'sessionId':'test','update':tool_status}}))
             for session, kind, part in [('other', 'agent_message_chunk', 'other reply'),
                                         ('test', 'agent_thought_chunk', 'thinking'),
                                         ('test', 'agent_message_chunk', reply[:1]),

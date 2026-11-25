@@ -6,14 +6,14 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ("peer.py", "agy_text.py", "ask-agy", "peer-check", "Check-Peers.command",
-         "PetReactions.swift", "GlassDesk.swift", "PeerPets.swift", "PeerPetsActivity.swift", "tests/test_peer.py", "tests/peer-pets/main.swift")
+TOOLS = ("WhaleSeat.swift", "ask-cc", "peer.py", "agy_text.py", "ask-agy", "peer-check", "Check-Peers.command",
+         "PetReactions.swift", "GlassDesk.swift", "PeerPets.swift", "PeerPetsActivity.swift", "tests/test_peer.py", "tests/test_cc.py", "tests/peer-pets/main.swift")
 RESOURCES = ("ART-CREDITS.txt", "CrossPet-LICENSE.md",
              "gemini-idle.webp", "gemini-listening.webp", "gemini-pat.webp",
              "gemini-sleep.webp", "gemini-stir.webp", "gemini-tail.webp",
              "gemini-thinking.webp", "gpt-idle-blink.webp", "gpt-idle.webp",
              "gpt-listening.webp", "gpt-sleep.webp", "gpt-stir.webp",
-             "gpt-thinking.webp")
+             "gpt-thinking.webp", "whale-snack.webp", "whale-step.webp", "whale-work.webp")
 
 
 def main():

@@ -2,14 +2,6 @@
 
 在一台 Mac 上让 Codex 与 Antigravity（agy）通过各自的 CLI 互相咨询。透明桌宠显示联系方向、等待、回包及失败状态；轻点角色可切到对应客户端。项目按非商业条款共享。
 
-[下载 1.8 macOS 完整部署包](https://github.com/TingxiTang/PeerPets/releases/download/v1.8/PeerPets-1.8-macOS.zip) · [版本说明](https://github.com/TingxiTang/PeerPets/releases/tag/v1.8)
-
-![同桌 1.8 原生桌宠：白龙与紫猫的睡姿、悬停回应和第二轮传球](docs/peerpets-1.8.png)
-
-白龙侧卧枕臂，紫猫蜷尾入睡。指针停在角色上时，她们会回应，短时间内再靠近，动作会变轻。想看 CLI 等待与纸鹤回信的过程，可以回看[1.6 实机动效](docs/glass-desk.gif)。
-
-角色立绘来自 CrossPet，白龙设定来自 ZipZipPipe。睡姿依据原版角色重新绘制，角色画面按 CC BY-NC-SA 4.0 共享。[完整署名](macos/Resources/ART-CREDITS.txt) · [美术许可](macos/Resources/CrossPet-LICENSE.md)
-
 ## 在新 Mac 上使用
 
 1. 使用 macOS 13 或更高版本，准备 Python 3.9+。在这台电脑安装并分别登录 Codex CLI 和 agy CLI；账号须能访问配置的模型。桌宠点击跳转还需要对应的桌面客户端。每台机器使用自己的账号、网络设置和客户端权限。
@@ -49,7 +41,7 @@ python3 tools/peer.py codex --ask '请复核这个计算……'
 
 将指针停在立绘上约 0.16 秒，白龙会倾听，紫猫会眯眼；30 秒内再次靠近会轻轻眨眼或动尾，继续逗弄时安静下来。睡着时只动尾尖或耳尖。两人都清醒且桌边无人操作时，偶尔有慢眨和倾听的小动作。
 
-空闲时单击纸团，两位角色都醒着会互传，30 秒内再点由上轮最后接球的一方先发，只有紫猫醒着时她会拨回，只有白龙醒着时她会用角尖挑回。两人都睡时，纸团沿桌滚动。移开指针收起道具。桌沿暖灯表示请求在途，每条新收到的成功回执会让纸鹤飞向发起方。失败和取消保留原因提示。启用系统“减少动态效果”时，纸团与纸鹤改在原地显示。拖动角色可移动，右键可设置空闲隐身，空白区域支持点击穿透。
+空闲时单击玻璃桌右端的纸团，两位角色都醒着会互传，30 秒内再点由上轮最后接球的一方先发，只有紫猫醒着时她会拨回，只有白龙醒着时她会用角尖挑回。两人都睡时，纸团沿桌滚动。移开指针收起道具。桌沿暖灯表示请求在途，每条新收到的成功回执会让纸鹤飞向发起方。失败和取消保留原因提示。启用系统“减少动态效果”时，纸团与纸鹤改在原地显示。拖动角色可移动，右键可设置空闲隐身，空白区域支持点击穿透。
 
 自检失败时查看发起端 stderr、退出码和最后一个阶段。agy 停在 `session/new` 时检查代理来源、模型列表和账户服务；已有代理或受管策略优先，符合条件的 macOS 环境会为 agy 子进程沿用系统本机代理。Codex 配置读取受限时检查发起端对本次命令的权限。一个接收端自检成功，只说明当前账号和发起环境的这条路径可用。
 
@@ -64,10 +56,18 @@ open build/PeerPets.app
 make release
 ```
 
-`make test` 运行 Python 离线桥接回归和 Swift 桌宠状态检查。`make app` 构建 Apple Silicon 与 Intel 双架构应用并校验签名。`make release` 输出 `build/PeerPets-1.8-macOS.zip`，包含源码、应用、使用说明、署名和许可。本版交付范围为 macOS。桌宠源代码使用 AppKit，桥接使用 POSIX 进程组。
+`make test` 运行 Python 离线桥接回归和 Swift 桌宠状态检查。`make app` 构建 Apple Silicon 与 Intel 双架构应用并校验签名。`make release` 输出 `build/PeerPets-1.9.2-macOS.zip`，包含源码、应用、使用说明、署名和许可。本版交付范围为 macOS。桌宠源代码使用 AppKit，桥接使用 POSIX 进程组。
 
 ## 在 GitHub 分享
 
 可单独将此项目的源码目录作为仓库根目录，并将完整 ZIP 作为 Release 附件。发布源码时保留 LICENSE、AGENTS.md、macos、tools、scripts、Makefile 与本说明。`.gitignore` 会排除编译缓存、本机报告、环境文件和预编译应用。接收方自行安装两个厂商的客户端。
 
 代码与文档允许非商业部署和免费原样转发。商业用途或分发改版需另行授权。角色立绘与改编睡姿保留 CrossPet 的署名及独立的非商业、相同方式共享许可。[项目许可](LICENSE) · [美术署名](macos/Resources/ART-CREDITS.txt) · [上游美术许可](macos/Resources/CrossPet-LICENSE.md)
+
+## 鲸鱼娘与真实 CC 派工
+
+鲸鱼娘通常坐在后排吃鱼。通过下列入口派工时，她会走到前排抱板待命。轻点前排角色查看派工方或并发数量。最后一笔成功、失败、取消或桥接进程退出后回座。远景透传点击，支持空闲隐身和系统减少动态效果。
+
+Codex 发起文字咨询用 `tools/ask-cc --from codex '请复核这个已获准共享的小问题'`，agy 发起时把 `codex` 换成 `antigravity`。CLI 需要本机已配置的 DeepSeek 官方 HTTPS `ANTHROPIC_BASE_URL` 和认证环境变量，模型逐次指定为 `deepseek-flash`。通过此入口的咨询只回传文字。
+
+单文件任务可用 `tools/ask-cc --from codex --cwd 独立任务目录 --output answer.txt < 任务.txt`。先在该目录准备可执行的可信 `./verify`，输出文件名须尚未占用。接收端只获该文件的写入规则及验证命令，桥接打印模型回执，确认约定的普通文件已写出，再在同一目录独立执行可信的 `./verify`。验证器应可重复执行，返回 0 表示产物符合它检查的条件。桥接返回 0 才表示这次单文件派工通过复验。失败时查看 stderr 和退出码，保留文件供发起方检查。最终是否采纳由发起方决定。派工默认总时限 300 秒，可用 `--timeout 秒数` 指定。桌宠只读取本入口的本机请求状态，不探测其他终端会话。

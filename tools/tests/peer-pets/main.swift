@@ -44,6 +44,14 @@ precondition(concurrent.active.count == 1)
 precondition(concurrent.returningReplies(since:now-1,at:now).map(\.peer) == ["antigravity"])
 precondition(concurrent.returningReplies(since:now,at:now).isEmpty)
 precondition(concurrent.returningReplies(since:now-1,at:now+Activity.craneDuration).isEmpty)
+// At the deadline, subtracting two timestamps can round the age below 2.4.
+let replyTime = 100001.0
+let deadline = replyTime + Activity.craneDuration
+let reply = Event(peer:"codex", phase:"done", time:replyTime, pid:getpid(), reason:nil)
+let timedReply = Activity(latest:reply, recentReplies:[reply])
+precondition(timedReply.returningReplies(since:replyTime, at:deadline.nextDown).count == 1)
+precondition(timedReply.returningReplies(since:replyTime, at:deadline).isEmpty)
+precondition(!timedReply.keepsBothAwake(since:replyTime, at:deadline))
 // Silence and a second request finishing must not put the participants to sleep.
 precondition(concurrent.keepsBothAwake(since:now-1,at:now+180))
 try write("other","failed",age:0,peer:"codex",reason:"cancelled")
@@ -83,3 +91,34 @@ precondition(hover.response == nil)
 visit(.dragon,44,awake:false)
 precondition(hover.response == .stir)
 print("悬停停留、独立记忆、连续接近、过期、睡姿及在途抑制检查通过")
+
+// Each registered CC job has its own event file. The two original roles keep their own activity.
+func ccEvent(_ id:String, _ phase:String, _ timestamp:Double, _ pid:Int32 = getpid()) throws {
+    let value:[String:Any]=["peer":"cc","provider":"deepseek","sender":"codex","phase":phase,"pid":pid,"time":timestamp]
+    try JSONSerialization.data(withJSONObject:value).write(to:directory.appendingPathComponent(id+".json"))
+}
+try ccEvent("whaleA","busy",now-150)
+try ccEvent("whaleB","busy",now-1)
+try ccEvent("whaleOrphan","busy",now,Int32.max)
+precondition(snapshot().whaleJobs.count == 2 && snapshot().active.isEmpty)
+try ccEvent("whaleB","failed",now)
+precondition(snapshot().whaleJobs.count == 1 && snapshot().whaleAtDesk(since:now-1,at:now))
+try ccEvent("whaleA","done",now+1)
+let landed=readActivity(at:directory,now:now+1)
+precondition(landed.whaleJobs.isEmpty && landed.whaleAtDesk(since:now,at:now+1.2))
+precondition(!landed.whaleAtDesk(since:now,at:now+1.55))
+precondition(!landed.whaleAtDesk(since:now+1.1,at:now+1.2))
+precondition(landed.returningReplies(since:now,at:now+1).allSatisfy { $0.peer != "cc" })
+print("鲸鱼娘并发、长静默、死进程、终态和旧回执检查通过")
+
+// The kernel releases a crashed bridge's lock even if its PID later belongs to a live process.
+let lockedURL = directory.appendingPathComponent("held.json")
+let held:[String:Any] = ["peer":"cc","provider":"deepseek","sender":"antigravity","phase":"busy",
+                         "pid":getpid(),"time":now-90000,"ownerLocked":true]
+try JSONSerialization.data(withJSONObject:held).write(to:lockedURL)
+let owner = try FileHandle(forWritingTo:lockedURL)
+precondition(flock(owner.fileDescriptor, LOCK_EX | LOCK_NB) == 0)
+precondition(snapshot().whaleJobs.count == 1)
+try owner.close()
+precondition(snapshot().whaleJobs.isEmpty)
+print("跨日静默与 PID 重用时的请求锁检查通过")

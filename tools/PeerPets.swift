@@ -42,6 +42,10 @@ final class Scene: NSView {
     var activity = Activity() {
         didSet { updateProps() }
     }
+    var whaleWalk = WhaleWalk()
+    private(set) var whale: WhaleSprite?
+    private var caughtSnacking = false
+    private var whaleActionable: Bool { !activity.whaleJobs.isEmpty }
     var hovered = false {
         didSet { updateProps(); needsDisplay = true }
     }
@@ -74,6 +78,7 @@ final class Scene: NSView {
         openClients.contains(pet) || activity.keepsBothAwake(since:launchedAt,at:now)
     }
     func hoverHelp(at point:NSPoint) -> String {
+        if whaleActionable && whale?.contains(point) == true { return activity.whaleStatus }
         guard let pet=companion(at:point) else { return "点纸团玩耍 · 拖动角色移动" }
         let state = openClients.contains(pet) ? "客户端已打开，点我切换" : "客户端未打开，点我打开"
         guard let last = activity.lastResultByPeer[pet.peer] else { return pet.name + " · " + state }
@@ -82,7 +87,8 @@ final class Scene: NSView {
     }
     private(set) var tossStart:Double?
     var animatingProps:Bool {
-        tossStart != nil || reactions.response != nil || lookStarted != nil || shortcutButtons.contains { $0.usedAt.isFinite } ||
+        whaleWalk.moving(at:ProcessInfo.processInfo.systemUptime) ||
+            (activity.whaleJobs.isEmpty && activity.whaleAtDesk(since:launchedAt,at:Date().timeIntervalSince1970)) || tossStart != nil || reactions.response != nil || lookStarted != nil || shortcutButtons.contains { $0.usedAt.isFinite } ||
             !activity.returningReplies(since:launchedAt, at:Date().timeIntervalSince1970).isEmpty
     }
     private func updateProps() {
@@ -113,6 +119,8 @@ final class Scene: NSView {
     }
     func tick(at time:Double) {
         clock = time
+        whaleWalk.faceDesk(activity.whaleAtDesk(since:launchedAt, at:Date().timeIntervalSince1970),
+                           at:time, reduce:NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         if let start = tossStart, time-start >= 1.65 {
             if paperGame == .between { lastCatch = (firstPlayer == .cat ? .dragon : .cat,time) }
             tossStart=nil; updateProps()
@@ -144,6 +152,8 @@ final class Scene: NSView {
     }
     func updateReactions(at point:NSPoint?, time:TimeInterval) {
         let now = Date().timeIntervalSince1970
+        let caught = !whaleActionable && point.map { whale?.contains($0) == true } == true
+        if caught != caughtSnacking { caughtSnacking = caught; needsDisplay = true }
         let occupied = activity.keepsBothAwake(since:launchedAt,at:now)
         let canReact = !occupied && tossStart == nil && press == nil
         // Badges and independent desk buttons are shortcuts rather than reactions.
@@ -176,7 +186,7 @@ final class Scene: NSView {
 
     func acceptsClick(_ point:NSPoint) -> Bool {
         (hovered && (closeRect.contains(point) || shortcutButtons.contains { !$0.isHidden && $0.frame.contains(point) }))
-            || companion(at:point) != nil
+            || (whaleActionable && whale?.contains(point) == true) || companion(at:point) != nil
     }
 
     func setupAccessibility() {
@@ -198,7 +208,7 @@ final class Scene: NSView {
                        help:"显示桌面",target:self,action:#selector(showDesktop)),
             DeskButton(.finder,frame:NSRect(x:185,y:181,width:53,height:39),title:"Finder",
                        help:"在 Finder 打开个人主目录",target:self,action:#selector(openFinder)),
-            DeskButton(.paper,frame:NSRect(x:175,y:151,width:26,height:26),title:"纸团",
+            DeskButton(.paper,frame:NSRect(x:PaperGame.restCenter.x-13,y:PaperGame.restCenter.y-13,width:26,height:26),title:"纸团",
                        help:"点纸团，让醒着的同桌接球",target:self,action:#selector(tossPaper))]
         for button in shortcutButtons {
             addSubview(button)
@@ -274,6 +284,12 @@ final class Scene: NSView {
                 }
             }
         }
+        for pose in ["snack","step","work"] {
+            let name = "whale-" + pose
+            if let path = Bundle.main.url(forResource:name,withExtension:"webp") {
+                images[name] = NSImage(contentsOf:path)
+            }
+        }
         return images
     }()
     func pose(for pet:Companion, now:Double, reduce:Bool) -> String {
@@ -325,6 +341,7 @@ final class Scene: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill()
         dirtyRect.fill(using:.copy)
+        whale = nil
         sprites.removeAll(keepingCapacity:true)
         hoverSprites.removeAll(keepingCapacity:true)
         let now = Date().timeIntervalSince1970
@@ -341,16 +358,20 @@ final class Scene: NSView {
         }
         let result = activity.resultLabel(at:now, hovered:hovered)
         let showingNotice = notice.map { clock < $0.until } ?? false
-        let resting = !hovered && event == nil && result == nil && !showingNotice
+        let depth = whaleWalk.progress(at:clock)
+        let whaleVisibleAtWork = whaleActionable || depth > 0
+        let resting = !hovered && event == nil && result == nil && !showingNotice && !whaleVisibleAtWork
         if resting && hideAtRest { return }
         if let waiting = activity.waitingLabel(at:now) {
             chip(waiting,x:7,y:5,accent:paper)
+        } else if whaleActionable {
+            chip(activity.whaleStatus,x:7,y:5,accent:paper)
         }
         if hovered {
             box(closeRect.minX,closeRect.minY,closeRect.width,closeRect.height,12,ink)
             label("×",closeRect.minX,closeRect.minY-1,closeRect.width,18,paper)
         }
-        if let result, let last=activity.latest {
+        if let result, let last=activity.latest, !whaleActionable || busy {
             chip(result,x:7,y:busy ? 220:5,
                  accent:last.phase=="failed" ? color(0xFFB8AD) : gold)
         }
@@ -366,6 +387,11 @@ final class Scene: NSView {
         let context = NSGraphicsContext.current?.cgContext
         context?.setAlpha(resting ? 0.36 : 1)
         context?.beginTransparencyLayer(auxiliaryInfo:nil)
+        let landing = activity.whaleJobs.isEmpty && activity.whaleAtDesk(since:launchedAt,at:now)
+            ? activity.whaleLast.map { now-$0.time } : nil
+        whale = whaleSprite(art:artwork,depth:depth,clock:clock,caught:caughtSnacking,reduce:reduce,landing:landing)
+        if depth < 0.4 { whale?.draw() }
+        drawWhaleSeat()
         drawDesk(waitingAt:busy ? (receiver == 92 ? 38 : 338) : nil)
         for pet in Companion.allCases {
             let awake = isAwake(pet,at:now)
@@ -376,11 +402,12 @@ final class Scene: NSView {
             character(pet,pose:pose(for:pet,now:now,reduce:reduce),at:x,
                       bottom:183-(awake ? bob(x)+lift : 0))
         }
+        if depth >= 0.4 { whale?.draw() }
         if tossStart != nil {
             if reduce {
                 context?.saveGState()
                 context?.setAlpha(0.6 + 0.4*min(1,CGFloat(max(0,clock-(tossStart ?? clock)))/0.2))
-                drawCrumpledPaper(at:NSPoint(x:188,y:164))
+                drawCrumpledPaper(at:PaperGame.restCenter)
                 context?.restoreGState()
             } else {
                 let angle:CGFloat = paperGame == .rolling ? 720*beat : 18*sin(.pi*2*beat)
@@ -416,6 +443,10 @@ final class Scene: NSView {
     override func mouseDown(with event: NSEvent) {
         let pos = convert(event.locationInWindow,from:nil)
         if hovered && closeRect.contains(pos) { NSApp.terminate(nil); return }
+        if whaleActionable && whale?.contains(pos) == true {
+            showNotice(activity.whaleStatus)
+            return
+        }
         guard let window = window, let pet = companion(at:pos) else { return }
         press = (pet, window.convertPoint(toScreen:event.locationInWindow), window.frame.origin)
         dragging = false
@@ -501,7 +532,7 @@ final class PetApp: NSObject, NSApplicationDelegate {
                 }
             }
             self.scene.updateReactions(at:hovered ? point : nil,time:t)
-            let interval: Double = self.scene.animatingProps ? 1/30.0 : (self.scene.event != nil ? 0.125 : 0.5)
+            let interval: Double = self.scene.animatingProps || self.scene.whaleWalk.moving(at:t) ? 1/30.0 : (self.scene.event != nil ? 0.125 : 0.5)
             if t-self.lastFrame >= interval {
                 self.scene.tick(at:t); self.lastFrame=t
             }

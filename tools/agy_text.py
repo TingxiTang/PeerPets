@@ -48,6 +48,8 @@ def ask(binary, profile, model, question):
                     update = event.get("update", {})
                     content = update.get("content", {})
                     kind = update.get("sessionUpdate")
+                    if not isinstance(content, dict):
+                        continue
                     text = content.get("text")
                     if (event.get("sessionId") != session or content.get("type") != "text"
                             or not isinstance(text, str) or not text
