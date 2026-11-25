@@ -1,0 +1,8 @@
+/build/
+/outputs/
+/PeerPets.app/
+.DS_Store
+__pycache__/
+*.pyc
+.env
+.env.*

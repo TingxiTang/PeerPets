@@ -1,0 +1,8 @@
+同桌 · 角色美术
+立绘：CrossPet / lokicorvus。GPT 白龙设定：ZipZipPipe。Gemini 采用社区猫耳、异色瞳与四芒星设定，角色参考页列出 ZipZipPipe 版本。
+素材：characters/{gpt,gemini}/{idle,thinking}.webp，保留原图。本应用缩放展示并根据状态切换姿势。
+源版本：https://github.com/lokicorvus/crosspet/tree/6e98970f6ff9b44e8ac85215241cabcd78f67d92/characters
+美术许可：CC BY-NC-SA 4.0（署名、非商业、相同方式共享）
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+参考：https://genderswapai.com/zh-CN/ai-gijinka/gpt
+https://genderswapai.com/zh-TW/ai-gijinka/gemini

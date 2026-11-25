@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""向 Antigravity 发起一次普通文字咨询，沿用桥接的默认等待时间。"""
+import sys
+
+sys.dont_write_bytecode = True
+from peer import main
+
+if len(sys.argv) != 2 or not sys.argv[1].strip():
+    sys.exit("用法：tools/ask-agy '问题'")
+main(["antigravity", "--ask=" + sys.argv[1]])

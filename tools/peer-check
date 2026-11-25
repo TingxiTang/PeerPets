@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""固定口令自检入口，仅接受接收端名称。"""
+import sys
+
+sys.dont_write_bytecode = True
+from peer import main
+
+if len(sys.argv) != 2 or sys.argv[1] not in {"codex", "antigravity"}:
+    sys.exit("用法：peer-check codex 或 peer-check antigravity")
+main([sys.argv[1], "--check"])
