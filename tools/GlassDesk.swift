@@ -72,6 +72,35 @@ func drawCrumpledPaper(at center:NSPoint, angle:CGFloat = 0) {
     NSGraphicsContext.restoreGraphicsState()
 }
 
+enum PaperGame {
+    case between, cat, dragon, rolling
+
+    func position(at beat:CGFloat, first:Companion, lift:CGFloat) -> NSPoint {
+        let middle = pt(188,164), paw = pt(245,155), horn = pt(117,50)
+        func arc(_ a:NSPoint,_ b:NSPoint,_ u:CGFloat,_ lift:CGFloat) -> NSPoint {
+            let t = u*u*(3-2*u)
+            return pt(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t-lift*sin(.pi*u))
+        }
+        switch self {
+        case .rolling:
+            return pt(188+24*sin(2 * .pi*beat)*sin(.pi*beat),164+5*sin(.pi*beat))
+        case .cat, .dragon:
+            let target = self == .cat ? paw : horn
+            if beat < 0.5 { return arc(middle,target,beat*2,self == .cat ? 8 : 16) }
+            return arc(target,middle,(beat-0.5)*2,self == .cat ? 24 : 48)
+        case .between:
+            let left = pt(130,164), right = pt(245,164)
+            let from = first == .cat ? right : left
+            let to = first == .cat ? left : right
+            if beat < 0.25 { return arc(middle,from,beat/0.25,20) }
+            let release:CGFloat = first == .cat ? 0.32 : 0.25
+            if beat < release { return from }
+            if beat < 0.72 { return arc(from,to,(beat-release)/(0.72-release),lift) }
+            return arc(to,middle,(beat-0.72)/0.28,25)
+        }
+    }
+}
+
 func drawCrane(from source:CGFloat, to destination:CGFloat, progress:Double, reduce:Bool) {
     let u = CGFloat(min(1,progress / 0.9))
     let ease = u*u*(3-2*u)

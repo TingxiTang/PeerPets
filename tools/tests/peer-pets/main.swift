@@ -1,4 +1,4 @@
-// swiftc tools/PeerPetsActivity.swift tools/tests/peer-pets/main.swift -o /tmp/test-peer-pets
+// swiftc tools/PetReactions.swift tools/PeerPetsActivity.swift tools/tests/peer-pets/main.swift -o /tmp/test-peer-pets
 import Foundation
 import Darwin
 
@@ -44,4 +44,42 @@ precondition(concurrent.active.count == 1)
 precondition(concurrent.returningReplies(since:now-1,at:now).map(\.peer) == ["antigravity"])
 precondition(concurrent.returningReplies(since:now,at:now).isEmpty)
 precondition(concurrent.returningReplies(since:now-1,at:now+Activity.craneDuration).isEmpty)
+// Silence and a second request finishing must not put the participants to sleep.
+precondition(concurrent.keepsBothAwake(since:now-1,at:now+180))
+try write("other","failed",age:0,peer:"codex",reason:"cancelled")
+let settled = snapshot()
+precondition(settled.active.isEmpty && settled.keepsBothAwake(since:now-1,at:now))
+precondition(!settled.keepsBothAwake(since:now-1,at:now+3))
+precondition(!settled.keepsBothAwake(since:now+0.1,at:now+0.2))
+precondition(settled.lastResultByPeer["codex"]?.reason == "cancelled")
+precondition(settled.lastResultByPeer["antigravity"]?.phase == "failed")
+precondition(settled.waitingLabel(at:now) == nil)
 print("桌宠联系、并发、回执、失败、取消、终态停表及死进程检查通过")
+
+// Visits are per character. A stationary pointer, a quick pass or a busy request consumes no extra greeting.
+var hover = PetReactions()
+func visit(_ pet:Companion, _ t:Double, awake:Bool=true) {
+    hover.observe(nil,awake:false,allowed:true,at:t)
+    hover.observe(pet,awake:awake,allowed:true,at:t+0.1)
+    hover.observe(pet,awake:awake,allowed:true,at:t+0.3)
+}
+hover.observe(.cat,awake:true,allowed:true,at:0)
+hover.observe(nil,awake:false,allowed:true,at:0.08)
+visit(.cat,1)
+precondition(hover.response == .welcome)
+hover.observe(.cat,awake:true,allowed:true,at:3)
+precondition(hover.response == nil)
+visit(.dragon,4)
+precondition(hover.response == .welcome)
+visit(.cat,5)
+precondition(hover.response == .familiar)
+visit(.cat,7)
+precondition(hover.response == nil)
+visit(.cat,40)
+precondition(hover.response == .welcome)
+hover.observe(.cat,awake:true,allowed:false,at:41)
+hover.observe(.cat,awake:true,allowed:true,at:43)
+precondition(hover.response == nil)
+visit(.dragon,44,awake:false)
+precondition(hover.response == .stir)
+print("悬停停留、独立记忆、连续接近、过期、睡姿及在途抑制检查通过")

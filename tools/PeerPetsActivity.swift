@@ -22,8 +22,14 @@ let cache = URL(fileURLWithPath: "/tmp/codex-agy-pet-\(getuid())")
 struct Activity {
     var active: [Event] = []
     var latest: Event?
+    var lastResultByPeer: [String:Event] = [:]
     var recentReplies: [Event] = []
     static let craneDuration = 2.4
+    func keepsBothAwake(since launch:Double, at now:Double) -> Bool {
+        if !active.isEmpty { return true }
+        guard let last = latest else { return false }
+        return last.time >= launch && last.time <= now && now-last.time < Self.craneDuration
+    }
     func returningReplies(since launch:Double, at now:Double) -> [Event] {
         recentReplies.filter { $0.phase == "done" && $0.time >= launch && $0.time <= now
             && now - $0.time < Self.craneDuration }
@@ -59,6 +65,7 @@ func readActivity(at cache: URL = cache, now: Double = Date().timeIntervalSince1
         if e.active {
             if kill(e.pid,0) == 0 || errno == EPERM { activity.active.append(e) }
         } else if ["done","failed"].contains(e.phase) {
+            if e.time > (activity.lastResultByPeer[e.peer]?.time ?? 0) { activity.lastResultByPeer[e.peer] = e }
             if e.phase == "done" && now-e.time < Activity.craneDuration { activity.recentReplies.append(e) }
             if e.time > (activity.latest?.time ?? 0) { activity.latest = e }
         }

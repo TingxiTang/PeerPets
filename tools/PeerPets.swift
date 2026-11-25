@@ -1,4 +1,4 @@
-// Build with GlassDesk.swift and PeerPetsActivity.swift, targeting macOS 13 or later.
+// Build with GlassDesk.swift, PetReactions.swift and PeerPetsActivity.swift, targeting macOS 13 or later.
 import AppKit
 import Darwin
 
@@ -18,10 +18,10 @@ func label(_ s: String,_ x: CGFloat,_ y: CGFloat,_ w: CGFloat,_ size: CGFloat,_ 
                           withAttributes:[.font:font,.foregroundColor:c,.paragraphStyle:p])
 }
 
-enum Companion: CaseIterable {
-    case dragon, cat
+extension Companion {
     var name: String { self == .dragon ? "Codex" : "Antigravity" }
     var bundleID: String { self == .dragon ? "com.openai.codex" : "com.google.antigravity" }
+    var peer: String { self == .dragon ? "codex" : "antigravity" }
     var badge: NSRect {
         self == .dragon ? NSRect(x:64,y:194,width:56,height:21) : NSRect(x:239,y:194,width:90,height:21)
     }
@@ -46,14 +46,47 @@ final class Scene: NSView {
         didSet { updateProps(); needsDisplay = true }
     }
     private var shortcutButtons: [DeskButton] = []
+    var openClients: Set<Companion> = [] {
+        didSet {
+            guard oldValue != openClients else { return }
+            tossStart = nil
+            lastCatch = nil
+            reactions = PetReactions()
+            updateProps()
+            needsDisplay = true
+        }
+    }
+    private(set) var reactions = PetReactions()
+    private(set) var firstPlayer: Companion = .cat
+    private var lastCatch: (pet:Companion, time:TimeInterval)?
+    private var passLift:CGFloat = 45
+    private var nextIdleLook = ProcessInfo.processInfo.systemUptime + Double.random(in:55...110)
+    private var lookStarted:TimeInterval?
+    private var catLooks = false
+    private(set) var paperGame: PaperGame = .between
+    func refreshClients() {
+        openClients = Set(Companion.allCases.filter { pet in
+            NSRunningApplication.runningApplications(withBundleIdentifier:pet.bundleID)
+                .contains { !$0.isTerminated && $0.isFinishedLaunching }
+        })
+    }
+    func isAwake(_ pet:Companion, at now:Double) -> Bool {
+        openClients.contains(pet) || activity.keepsBothAwake(since:launchedAt,at:now)
+    }
+    func hoverHelp(at point:NSPoint) -> String {
+        guard let pet=companion(at:point) else { return "点纸团玩耍 · 拖动角色移动" }
+        let state = openClients.contains(pet) ? "客户端已打开，点我切换" : "客户端未打开，点我打开"
+        guard let last = activity.lastResultByPeer[pet.peer] else { return pet.name + " · " + state }
+        let time = DateFormatter.localizedString(from:Date(timeIntervalSince1970:last.time),dateStyle:.short,timeStyle:.short)
+        return pet.name + " · " + state + "\n" + time + " · " + last.result
+    }
     private(set) var tossStart:Double?
     var animatingProps:Bool {
-        tossStart != nil || shortcutButtons.contains { $0.usedAt.isFinite } ||
+        tossStart != nil || reactions.response != nil || lookStarted != nil || shortcutButtons.contains { $0.usedAt.isFinite } ||
             !activity.returningReplies(since:launchedAt, at:Date().timeIntervalSince1970).isEmpty
     }
     private func updateProps() {
-        let playable = hovered && activity.active.isEmpty &&
-            activity.returningReplies(since:launchedAt,at:Date().timeIntervalSince1970).isEmpty
+        let playable = hovered && !activity.keepsBothAwake(since:launchedAt,at:Date().timeIntervalSince1970)
         if !playable { tossStart = nil }
         for button in shortcutButtons {
             button.isHidden = !hovered || (button.item == .paper && !playable)
@@ -61,15 +94,29 @@ final class Scene: NSView {
         }
     }
     @objc private func tossPaper() {
-        guard hovered, tossStart == nil, activity.active.isEmpty,
-              activity.returningReplies(since:launchedAt,at:Date().timeIntervalSince1970).isEmpty else { return }
-        tossStart = ProcessInfo.processInfo.systemUptime
+        guard hovered, tossStart == nil,
+              !activity.keepsBothAwake(since:launchedAt,at:Date().timeIntervalSince1970) else { return }
+        switch (openClients.contains(.dragon),openClients.contains(.cat)) {
+        case (true,true): paperGame = .between
+        case (false,true): paperGame = .cat
+        case (true,false): paperGame = .dragon
+        case (false,false): paperGame = .rolling
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let lastCatch, now-lastCatch.time <= 30 {
+            firstPlayer = lastCatch.pet
+        } else { firstPlayer = .cat }
+        passLift = firstPlayer == .dragon ? .random(in:47...55) : .random(in:32...40)
+        tossStart = now
         updateProps()
         needsDisplay = true
     }
     func tick(at time:Double) {
         clock = time
-        if let start = tossStart, time-start >= 1.65 { tossStart=nil; updateProps() }
+        if let start = tossStart, time-start >= 1.65 {
+            if paperGame == .between { lastCatch = (firstPlayer == .cat ? .dragon : .cat,time) }
+            tossStart=nil; updateProps()
+        }
         for button in shortcutButtons where button.usedAt.isFinite {
             button.needsDisplay = true
             if time-button.usedAt >= 0.32 { button.usedAt = -.infinity }
@@ -81,6 +128,7 @@ final class Scene: NSView {
     }
     let closeRect = NSRect(x:345,y:4,width:24,height:24)
     var sprites: [(Companion,NSImage,NSRect)] = []
+    private var hoverSprites: [(Companion,NSImage,NSRect)] = []
     var hideAtRest = UserDefaults.standard.bool(forKey: "hideAtRest")
     var notice: (text: String, until: TimeInterval)?
     var press: (pet: Companion, start: NSPoint, origin: NSPoint)?
@@ -94,6 +142,38 @@ final class Scene: NSView {
         }
         return nil
     }
+    func updateReactions(at point:NSPoint?, time:TimeInterval) {
+        let now = Date().timeIntervalSince1970
+        let occupied = activity.keepsBothAwake(since:launchedAt,at:now)
+        let canReact = !occupied && tossStart == nil && press == nil
+        // Badges and independent desk buttons are shortcuts rather than reactions.
+        let pet:Companion? = point.flatMap { position in
+            guard !shortcutButtons.contains(where:{ !$0.isHidden && $0.frame.contains(position) }),
+                  !Companion.allCases.contains(where:{ $0.badge.contains(position) })
+            else { return nil }
+            let probe=NSRect(origin:position,size:NSSize(width:1,height:1))
+            return hoverSprites.first { _,image,rect in
+                rect.contains(position) && image.hitTest(probe,withDestinationRect:rect,context:nil,hints:nil,flipped:true)
+            }?.0
+        }
+        let before = reactions.response
+        reactions.observe(pet,awake:pet.map { openClients.contains($0) } ?? false,
+                          allowed:canReact,at:time)
+        if before != reactions.response { needsDisplay = true }
+        guard canReact, !hovered, !hideAtRest, openClients.count == 2,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            lookStarted = nil
+            nextIdleLook = max(nextIdleLook,time+45)
+            return
+        }
+        if let start=lookStarted, time-start >= 1.3 { lookStarted=nil; needsDisplay=true }
+        if time >= nextIdleLook {
+            lookStarted=time
+            catLooks=Bool.random()
+            nextIdleLook=time + .random(in:55...110)
+        }
+    }
+
     func acceptsClick(_ point:NSPoint) -> Bool {
         (hovered && (closeRect.contains(point) || shortcutButtons.contains { !$0.isHidden && $0.frame.contains(point) }))
             || companion(at:point) != nil
@@ -119,7 +199,7 @@ final class Scene: NSView {
             DeskButton(.finder,frame:NSRect(x:185,y:181,width:53,height:39),title:"Finder",
                        help:"在 Finder 打开个人主目录",target:self,action:#selector(openFinder)),
             DeskButton(.paper,frame:NSRect(x:175,y:151,width:26,height:26),title:"纸团",
-                       help:"点纸团，让紫猫和白龙传球",target:self,action:#selector(tossPaper))]
+                       help:"点纸团，让醒着的同桌接球",target:self,action:#selector(tossPaper))]
         for button in shortcutButtons {
             addSubview(button)
         }
@@ -164,10 +244,12 @@ final class Scene: NSView {
         let installed = NSRunningApplication.runningApplications(withBundleIdentifier:pet.bundleID).first?.bundleURL
             ?? workspace.urlForApplication(withBundleIdentifier:pet.bundleID)
         guard let url = installed else { showNotice("未找到 " + pet.name); return }
+        if !openClients.contains(pet) { showNotice("正在叫醒 " + pet.name) }
         let options = NSWorkspace.OpenConfiguration()
         options.activates = true
         workspace.openApplication(at:url,configuration:options) { [weak self] _,error in
             DispatchQueue.main.async {
+                self?.refreshClients()
                 if error != nil { self?.showNotice("打开 " + pet.name + " 失败") }
                 else if workspace.frontmostApplication?.bundleIdentifier == pet.bundleID {
                     self?.showNotice("已切到 " + pet.name)
@@ -184,7 +266,8 @@ final class Scene: NSView {
     let artwork: [String:NSImage] = {
         var images: [String:NSImage] = [:]
         for character in ["gpt","gemini"] {
-            for pose in ["idle","thinking"] {
+            let reactions = character == "gpt" ? ["listening","idle-blink"] : ["pat","tail","listening"]
+            for pose in ["idle","thinking","sleep","stir"] + reactions {
                 let name = character + "-" + pose
                 if let path = Bundle.main.url(forResource:name,withExtension:"webp") {
                     images[name] = NSImage(contentsOf:path)
@@ -193,14 +276,44 @@ final class Scene: NSView {
         }
         return images
     }()
-    func character(_ name: String, _ pose: String, at x: CGFloat, bottom: CGFloat) {
-        guard let image = artwork[name + "-" + pose], image.size.height > 0 else { return }
-        let ratio = min(145/image.size.height, 150/image.size.width)
-        let w = image.size.width * ratio, h = image.size.height * ratio
-        let rect=NSRect(x:x-w/2,y:bottom-h,width:w,height:h)
-        sprites.append((name == "gpt" ? .dragon : .cat,image,rect))
-        image.draw(in:rect,from:.zero,
-                   operation:.sourceOver,fraction:1,respectFlipped:true,hints:[.interpolation:NSImageInterpolation.high.rawValue])
+    func pose(for pet:Companion, now:Double, reduce:Bool) -> String {
+        if activity.active.contains(where:{ $0.peer == pet.peer }) { return "thinking" }
+        let awake = isAwake(pet,at:now)
+        let neutral = awake ? "idle" : "sleep"
+        guard !activity.keepsBothAwake(since:launchedAt,at:now), tossStart == nil else { return neutral }
+        if reactions.target == pet, let response=reactions.response {
+            if !awake { return reduce ? "sleep" : "stir" }
+            switch response {
+            case .welcome: return pet == .dragon ? "listening" : "pat"
+            case .familiar: return pet == .dragon ? "idle-blink" : (reduce ? "idle" : "tail")
+            case .stir: return neutral
+            }
+        }
+        if let start=lookStarted, !reduce {
+            let dt=clock-start
+            if pet == .dragon && (0..<0.4).contains(dt) { return "idle-blink" }
+            if pet == .cat && catLooks && (0.4..<1.3).contains(dt) { return "listening" }
+        }
+        return neutral
+    }
+    func character(_ pet:Companion, pose:String, at x:CGFloat, bottom:CGFloat) {
+        let name = pet == .dragon ? "gpt" : "gemini"
+        guard let image = artwork[name+"-"+pose], image.size.height > 0 else { return }
+        let sleeping = pose == "sleep" || pose == "stir"
+        // Both sleepers came from one sheet. Keep its relative size after cropping.
+        let widthLimit:CGFloat = sleeping && pet == .cat ? 150*653/892 : 150
+        func placed(_ sprite:NSImage) -> NSRect {
+            let ratio=min(145/sprite.size.height,widthLimit/sprite.size.width)
+            let w=sprite.size.width*ratio,h=sprite.size.height*ratio
+            return NSRect(x:x-w/2,y:bottom-h,width:w,height:h)
+        }
+        let rect=placed(image)
+        if let base=artwork[name+(sleeping ? "-sleep" : "-idle")] {
+            hoverSprites.append((pet,base,placed(base)))
+        }
+        sprites.append((pet,image,rect))
+        image.draw(in:rect,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,
+                   hints:[.interpolation:NSImageInterpolation.high.rawValue])
     }
     func bubble(_ text: String, at x: CGFloat) {
         box(x-40, 29, 80, 23, 10, paper)
@@ -213,6 +326,7 @@ final class Scene: NSView {
         NSColor.clear.setFill()
         dirtyRect.fill(using:.copy)
         sprites.removeAll(keepingCapacity:true)
+        hoverSprites.removeAll(keepingCapacity:true)
         let now = Date().timeIntervalSince1970
         let event = activity.foreground(at:now)
         let phase = event?.phase ?? "idle", busy = event?.active == true
@@ -248,17 +362,20 @@ final class Scene: NSView {
         }
         let beat = CGFloat(min(1, max(0, (clock-(tossStart ?? clock))/1.65)))
         let playing = tossStart != nil && !reduce
-        let catchRight: CGFloat = playing ? max(0, 1-abs(beat-0.25)*12) : 0
-        let catchLeft: CGFloat = playing ? max(0, 1-abs(beat-0.72)*12) : 0
         NSGraphicsContext.saveGraphicsState()
         let context = NSGraphicsContext.current?.cgContext
         context?.setAlpha(resting ? 0.36 : 1)
         context?.beginTransparencyLayer(auxiliaryInfo:nil)
         drawDesk(waitingAt:busy ? (receiver == 92 ? 38 : 338) : nil)
-        character("gpt",busy && receiver == 92 ? "thinking" : "idle",
-                  at:92,bottom:183-bob(92)-catchLeft*4)
-        character("gemini",busy && receiver == 284 ? "thinking" : "idle",
-                  at:284,bottom:183-bob(284)-catchRight*4)
+        for pet in Companion.allCases {
+            let awake = isAwake(pet,at:now)
+            let x:CGFloat = pet == .dragon ? 92 : 284
+            let catching = paperGame == .between || (pet == .dragon ? paperGame == .dragon : paperGame == .cat)
+            let moment:CGFloat = paperGame == .between ? (pet == firstPlayer ? 0.25 : 0.72) : 0.5
+            let lift:CGFloat = playing && catching ? 4*max(0,1-abs(beat-moment)*12) : 0
+            character(pet,pose:pose(for:pet,now:now,reduce:reduce),at:x,
+                      bottom:183-(awake ? bob(x)+lift : 0))
+        }
         if tossStart != nil {
             if reduce {
                 context?.saveGState()
@@ -266,12 +383,8 @@ final class Scene: NSView {
                 drawCrumpledPaper(at:NSPoint(x:188,y:164))
                 context?.restoreGState()
             } else {
-                let start:CGFloat, end:CGFloat, t:CGFloat, height:CGFloat
-                if beat < 0.25 { start=188; end=245; t=beat/0.25; height=20 }
-                else if beat < 0.72 { start=245; end=130; t=(beat-0.25)/0.47; height=45 }
-                else { start=130; end=188; t=(beat-0.72)/0.28; height=25 }
-                let x=start+(end-start)*t*t*(3-2*t)
-                drawCrumpledPaper(at:NSPoint(x:x,y:164-height*sin(.pi*t)),angle:18*sin(.pi*2*t))
+                let angle:CGFloat = paperGame == .rolling ? 720*beat : 18*sin(.pi*2*beat)
+                drawCrumpledPaper(at:paperGame.position(at:beat,first:firstPlayer,lift:passLift),angle:angle)
             }
         }
         if !resting {
@@ -282,7 +395,7 @@ final class Scene: NSView {
         }
         context?.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
-        if let e = event {
+        if let e = event, activity.keepsBothAwake(since:launchedAt,at:now) {
             let phrase: String
             switch phase {
             case "starting": phrase = "正在联系…"
@@ -345,6 +458,11 @@ final class PetApp: NSObject, NSApplicationDelegate {
     var timer: Timer?
     var lastCheck: TimeInterval = -10
     var lastFrame: TimeInterval = -10
+    @objc private func clientChanged(_ note:Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              Companion.allCases.contains(where:{ $0.bundleID == app.bundleIdentifier }) else { return }
+        scene.refreshClients()
+    }
     func applicationDidFinishLaunching(_ note: Notification) {
         panel = NSPanel(contentRect:scene.bounds,styleMask:[.borderless,.nonactivatingPanel],
                         backing:.buffered,defer:false)
@@ -359,7 +477,11 @@ final class PetApp: NSObject, NSApplicationDelegate {
         }
         panel.setContentSize(NSSize(width:376,height:243))
         scene.setupAccessibility()
-        scene.toolTip = "点击角色打开客户端 · 点纸团传球 · 悬停使用课桌和 Finder · 拖动移动"
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            center.addObserver(self,selector:#selector(clientChanged(_:)),name:name,object:nil)
+        }
+        scene.refreshClients()
         panel.orderFrontRegardless()
         let tick = Timer(timeInterval:1/30.0,repeats:true) { [weak self] _ in
             guard let self = self else {return}
@@ -371,7 +493,14 @@ final class PetApp: NSObject, NSApplicationDelegate {
             }
             let passThrough = self.scene.press == nil && (!hovered || !self.scene.acceptsClick(point))
             if self.panel.ignoresMouseEvents != passThrough { self.panel.ignoresMouseEvents=passThrough }
-            if t-self.lastCheck >= 0.5 { self.scene.activity=readActivity(); self.lastCheck=t }
+            if t-self.lastCheck >= 0.5 {
+                self.scene.activity=readActivity(); self.lastCheck=t
+                if hovered {
+                    let help = self.scene.hoverHelp(at:point)
+                    if self.scene.toolTip != help { self.scene.toolTip = help }
+                }
+            }
+            self.scene.updateReactions(at:hovered ? point : nil,time:t)
             let interval: Double = self.scene.animatingProps ? 1/30.0 : (self.scene.event != nil ? 0.125 : 0.5)
             if t-self.lastFrame >= interval {
                 self.scene.tick(at:t); self.lastFrame=t

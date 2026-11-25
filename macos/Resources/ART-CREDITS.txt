@@ -6,3 +6,5 @@
 https://creativecommons.org/licenses/by-nc-sa/4.0/
 参考：https://genderswapai.com/zh-CN/ai-gijinka/gpt
 https://genderswapai.com/zh-TW/ai-gijinka/gemini
+
+同桌 1.8 的睡姿以相同角色待机图为参照，由 agy 设计、图像生成工具重绘并从透明合图分离。stir 与 tail 是局部动作变体。gpt-listening、gpt-idle-blink、gemini-listening、gemini-pat 来自上述 CrossPet 提交。上述原图、改编立绘与含角色的预览按 CC BY-NC-SA 4.0 共享。
