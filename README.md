@@ -2,6 +2,14 @@
 
 在一台 Mac 上让 Codex 与 Antigravity（agy）通过各自的 CLI 互相咨询。透明桌宠显示联系方向、等待、回包及失败状态；轻点角色可切到对应客户端。项目按非商业条款共享。
 
+[下载 1.9.2 macOS 完整部署包](https://github.com/TingxiTang/PeerPets/releases/download/v1.9.2/PeerPets-1.9.2-macOS.zip) · [版本说明](https://github.com/TingxiTang/PeerPets/releases/tag/v1.9.2)
+
+![同桌 1.9.2 原生三帧：鲸鱼娘在后排吃鱼、走近、前排抱板，纸团位于玻璃桌右端](docs/peerpets-1.9.2.png)
+
+鲸鱼娘平时坐在后排吃鱼，通过本机 CLI 派工给 Claude Code（DeepSeek）时才走到前排。单击她可以查看当前派工状态。点右桌沿的纸团可以和白龙、紫猫玩接球。[睡姿与纸团接力](docs/peerpets-1.8.png) · [CLI 等待与纸鹤回信动效](docs/glass-desk.gif)
+
+立绘及改编画面按 CC BY-NC-SA 4.0 共享。[完整美术署名](macos/Resources/ART-CREDITS.txt) · [美术许可](macos/Resources/CrossPet-LICENSE.md)
+
 ## 在新 Mac 上使用
 
 1. 使用 macOS 13 或更高版本，准备 Python 3.9+。在这台电脑安装并分别登录 Codex CLI 和 agy CLI；账号须能访问配置的模型。桌宠点击跳转还需要对应的桌面客户端。每台机器使用自己的账号、网络设置和客户端权限。
